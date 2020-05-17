@@ -1,0 +1,212 @@
+library(boot)
+library(vioplot)
+
+setwd("E:\\мои данные\\R_rab\\Короновирус статистика\\Скрипты для расчетов\\")
+
+#function for integrating the equation SRID
+
+model <- function(t, plist, slist) 
+ {
+  S=slist$S
+  I=slist$I
+  R=slist$R
+  D=slist$D
+  K=N-slist$S
+  for(i in 2:t)
+   {
+    S[i]=S[i-1]-(plist$ma/plist$N)*S[i-1]*I[i-1]
+	I[i]=I[i-1]+(plist$ma/plist$N)*S[i-1]*I[i-1]-plist$mb*I[i-1]-plist$my*I[i-1]
+	R[i]=R[i-1]+plist$mb*I[i-1]
+	D[i]=D[i-1]+plist$my*I[i-1]
+	K[i]=N-S[i]
+   }
+  return(data.frame(time=c(1:t), S=S, I=I, R=R, D=D, K=K))
+ }
+ 
+#function for calculating equation parameters from the data of the initial stage of the epidemic
+
+param_start<-function(star_data, N) 
+ {
+  a<-rep(0, nrow(star_data)-1) 
+  b<-rep(0, nrow(star_data)-1)
+  y<-rep(0, nrow(star_data)-1)
+
+  for(i in 2:nrow(star_data))
+   {
+    a[i-1]=(-1)*as.numeric(N)*(as.numeric(star_data$S[i])-as.numeric(star_data$S[i-1]))/(as.numeric(star_data$S[i-1])*as.numeric(data$I[i-1]))
+    b[i-1]=(as.numeric(star_data$R[i])-as.numeric(star_data$R[i-1]))/as.numeric(star_data$I[i-1])
+    y[i-1]=(as.numeric(star_data$D[i])-as.numeric(star_data$D[i-1]))/as.numeric(star_data$I[i-1])
+   }
+  return(list(ma=mean(a), mb=mean(b), my=mean(y), N=N, a=a, b=b, y=y))
+ }  
+ 
+#calculation of confidence intervals for variables of the SRID equation 
+#plim - probability for the confidence interval (0.95 for example)
+
+conf_int<-function(rez_list, plim)
+ {
+  nrep=length(rez_list)
+  time_m=nrow(rez_list[[1]])
+  plim=(1-plim)/2
+  Smean<-rep(0, time_m)
+  Smax<-rep(0, time_m)
+  Smin<-rep(0, time_m)
+  Rmean<-rep(0, time_m)
+  Rmax<-rep(0, time_m)
+  Rmin<-rep(0, time_m)
+  Imean<-rep(0, time_m)
+  Imax<-rep(0, time_m)
+  Imin<-rep(0, time_m)
+  Dmean<-rep(0, time_m)
+  Dmax<-rep(0, time_m)
+  Dmin<-rep(0, time_m)
+  Kmean<-rep(0, time_m)
+  Kmax<-rep(0, time_m)
+  Kmin<-rep(0, time_m)
+  Sv<-rep(0, nrep)
+  Rv<-rep(0, nrep)
+  Iv<-rep(0, nrep)
+  Dv<-rep(0, nrep)
+  Kv<-rep(0, 1000)
+  for(j in 1:time_m)
+   {
+    for(i in 1:nrep)
+     {
+      Sv[i]<-rez_list[[i]]$S[j]
+	  Rv[i]<-rez_list[[i]]$R[j]
+	  Iv[i]<-rez_list[[i]]$I[j]
+      Dv[i]<-rez_list[[i]]$D[j]
+	  Kv[i]<-rez_list[[i]]$K[j]
+     }
+    Smean[j]=quantile(Sv, 0.5)
+    Smin[j]=quantile(Sv, plim)
+    Smax[j]=quantile(Sv, 1-plim)
+    Rmean[j]=quantile(Rv, 0.5)
+    Rmin[j]=quantile(Rv, plim)
+    Rmax[j]=quantile(Rv, 1-plim)
+    Imean[j]=quantile(Iv, 0.5)
+    Imin[j]=quantile(Iv, plim)
+    Imax[j]=quantile(Iv, 1-plim)
+    Dmean[j]=quantile(Dv, 0.5)
+    Dmin[j]=quantile(Dv, plim)
+    Dmax[j]=quantile(Dv, 1-plim)
+	Kmean[j]=quantile(Kv, 0.5)
+    Kmin[j]=quantile(Kv, plim)
+    Kmax[j]=quantile(Kv, 1-plim)
+   }
+  return(data.frame(Smean=Smean, Smax=Smax, Smin=Smin, Imean=Imean, Imax=Imax, Imin=Imin, Rmean=Rmean, Rmax=Rmax, Rmin=Rmin, Dmean=Dmean, Dmax=Dmax, Dmin=Dmin, Kmean=Kmean, Kmax=Kmax, Kmin=Kmin))
+ }
+
+#loading data on the initial period of the epidemic process
+data<-read.csv("koron_m.txt",sep="\t",header=T, stringsAsFactors=F)
+
+#population size in a locality with an epidemic
+N=12692466
+
+#correction of initial data - increase in the number of infected and recovered
+datat<-data
+datat$I=20*datat$I
+datat$R=40*datat$R
+datat$S<-N-datat$I-datat$R
+datat$K<-N-datat$S
+data<-datat
+
+
+#calculation of parameters
+par_s<-param_start(data, N)
+
+#setting the initial values of variables for the equation SRID
+satart_liast<-list(S=data$S[1], I=data$I[1], R=data$R[1], D=data$D[1])
+
+#bootstrap sampling parameters to determine confidence intervals
+mean_value<-function(x, i)
+ {
+  return(mean(x[i]))
+ }
+
+at<-boot(par_s$a, statistic=mean_value, R=10000)$t
+bt<-boot(par_s$b, statistic=mean_value, R=10000)$t
+yt<-boot(par_s$y, statistic=mean_value, R=10000)$t
+
+p_rep<-data.frame(at=sample(at, 1000), bt=sample(bt, 1000), yt=sample(yt, 1000))
+
+#Calculation of confidence interval for R0 - basic reproductive number
+R<-p_rep$at/(p_rep$bt+p_rep$bt)
+quantile(R, 0.5)
+quantile(R, 0.025)
+quantile(R, 0.975)
+
+#setting a time interval for calculations 
+time_m=200
+
+#integration with bootstrap analysis
+rez_list<-list()
+satart_liast<-list(S=data$S[1], I=data$I[1], R=data$R[1], D=data$D[1])
+for(i in 1:1000)
+ {
+   param_list<-list(ma=p_rep$at[i], N=N, mb=p_rep$bt[i], my=p_rep$yt[i])
+   rez_list[[i]]<-model(t=time_m, plist=param_list, slist=satart_liast)
+ } 
+
+#confidence intervals for epidemic curves
+cof_i<-conf_int(rez_list, 0.95)
+
+#The curve of the number of people who were not in contact with the pathogen
+plot((1:time_m)+10, cof_i$Smean, ylim=c(1, N), xlim=c(10, time_m+10), type = 'n')
+polygon(c(rev((1:time_m)+10), (1:time_m)+10), c(rev(cof_i$Smin), cof_i$Smax), col = 'grey80', border = NA)
+lines((1:time_m)+10, cof_i$Smean, col = 'black')
+lines((1:time_m)+10, cof_i$Smin, lty = 'dashed', col = 'black')
+lines((1:time_m)+10, cof_i$Smax, lty = 'dashed', col = 'black')
+
+#The curve of the number of infectious 
+plot((1:time_m)+10, cof_i$Imean, ylim=c(1, N), xlim=c(10, time_m+10), type = 'n')
+polygon(c(rev((1:time_m)+10), (1:time_m)+10), c(rev(cof_i$Imin), cof_i$Imax), col = 'grey80', border = NA)
+lines((1:time_m)+10, cof_i$Imean, col = 'black')
+lines((1:time_m)+10, cof_i$Imin, lty = 'dashed', col = 'black')
+lines((1:time_m)+10, cof_i$Imax, lty = 'dashed', col = 'black')
+
+#recovered population curve
+plot((1:time_m)+10, cof_i$Rmean, ylim=c(1, N), xlim=c(10, time_m+10), type = 'n')
+polygon(c(rev((1:time_m)+10), (1:time_m)+10), c(rev(cof_i$Rmin), cof_i$Rmax), col = 'grey80', border = NA)
+lines((1:time_m)+10, cof_i$Rmean, col = 'black')
+lines((1:time_m)+10, cof_i$Rmin, lty = 'dashed', col = 'black')
+lines((1:time_m)+10, cof_i$Rmax, lty = 'dashed', col = 'black')
+
+#death curve
+plot((1:time_m)+10, cof_i$Dmean, ylim=c(1, max(c(cof_i$Dmean, cof_i$Dmean, cof_i$Dmax))), xlim=c(10, time_m+10), type = 'n')
+polygon(c(rev((1:time_m)+10), (1:time_m)+10), c(rev(cof_i$Dmin), cof_i$Dmax), col = 'grey80', border = NA)
+lines((1:time_m)+10, cof_i$Dmean, col = 'black')
+lines((1:time_m)+10, cof_i$Dmin, lty = 'dashed', col = 'black')
+lines((1:time_m)+10, cof_i$Dmax, lty = 'dashed', col = 'black')
+
+#prognosis of the time of onset of the maximum incidence rate
+plim=0.95
+plim=(1-plim)/2
+t_max<-rep(0, 1000)
+for(i in 1:1000)
+ {
+  Iv<-rez_list[[i]]$I
+  tm<-rez_list[[i]]$time
+  t_max[i]<-tm[Iv==max(Iv)]
+ }
+
+quantile(t_max, 0.5)
+quantile(t_max, plim)
+quantile(t_max, 1-plim)
+
+#visualization of the distribution of the maximum incidence date
+vioplot(t_max)
+
+#death forecast
+D_rasp<-rep(0, 1000)
+for(i in 1:1000)
+ {
+  D_rasp[i]<-rez_list[[i]]$D[time_m]
+ }
+
+quantile(D_rasp, 0.5)
+quantile(D_rasp, plim)
+quantile(D_rasp, 1-plim)
+
+#visualization of the distribution of the number of dead
+vioplot(D_rasp)
