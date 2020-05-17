@@ -1,7 +1,7 @@
 library(boot)
 library(vioplot)
 
-setwd("E:\\мои данные\\R_rab\\Короновирус статистика\\Скрипты для расчетов\\")
+setwd("\\Скрипты для расчетов\\")
 
 #function for integrating the equation SRID
 
